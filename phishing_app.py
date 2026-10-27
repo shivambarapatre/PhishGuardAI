@@ -215,6 +215,34 @@ st.markdown("""
     color: #555;
     font-size: 17px;
 }
+.result-card {
+    padding: 22px;
+    border-radius: 16px;
+    margin: 12px 0;
+    border: 1px solid;
+}
+.result-safe {
+    background: #ecfdf3;
+    border-color: #22c55e;
+    color: #166534;
+}
+.result-risk {
+    background: #fef2f2;
+    border-color: #ef4444;
+    color: #991b1b;
+}
+.status-light {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    margin-right: 9px;
+    vertical-align: middle;
+}
+.light-green { background: #16a34a; box-shadow: 0 0 0 4px #bbf7d0; }
+.light-red { background: #dc2626; box-shadow: 0 0 0 4px #fecaca; }
+.score-number { font-size: 34px; font-weight: 800; margin: 8px 0; }
+.score-label { font-size: 14px; opacity: 0.9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -268,20 +296,41 @@ if st.button("🔍 Check URL", use_container_width=True):
 
             st.divider()
 
+            # Safety score is the inverse of the model's phishing-risk score.
+            # A high safety score means the model predicts lower phishing risk.
+            safety_score = 1.0 - phishing_score
+
             if phishing_score >= 0.5:
-                st.error("⚠️ Result: Potential Phishing URL")
+                st.markdown(
+                    f'''<div class="result-card result-risk">
+                    <div><span class="status-light light-red"></span><strong>🔴 PHISHING RISK DETECTED</strong></div>
+                    <div class="score-number">{safety_score * 100:.1f}%</div>
+                    <div class="score-label">Safety score — low score means higher risk</div>
+                    </div>''',
+                    unsafe_allow_html=True
+                )
+                st.error("Result: Potential Phishing URL — treat this website as suspicious.")
             else:
-                st.success("✅ Result: Likely Legitimate URL")
+                st.markdown(
+                    f'''<div class="result-card result-safe">
+                    <div><span class="status-light light-green"></span><strong>🟢 NON-PHISHING INDICATORS</strong></div>
+                    <div class="score-number">{safety_score * 100:.1f}%</div>
+                    <div class="score-label">Safety score — high score means lower predicted risk</div>
+                    </div>''',
+                    unsafe_allow_html=True
+                )
+                st.success("Result: Likely Non-Phishing URL")
 
-            st.metric(
-                "Estimated Phishing Score",
-                f"{phishing_score * 100:.2f}%"
-            )
-
-            st.progress(phishing_score)
+            left, right = st.columns(2)
+            with left:
+                st.metric("Safety Score", f"{safety_score * 100:.2f}%")
+                st.progress(safety_score)
+            with right:
+                st.metric("Phishing-Risk Score", f"{phishing_score * 100:.2f}%")
+                st.progress(phishing_score)
 
             st.caption(
-                "This is a model score, not a guarantee of safety."
+                "Scores are model estimates based on URL text, not proof that a website is safe or malicious."
             )
 
             st.subheader("URL Security Analysis")
