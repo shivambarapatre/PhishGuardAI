@@ -33,6 +33,20 @@ SUSPICIOUS_WORDS = [
     "auth", "unlock", "suspended"
 ]
 
+# Small exact-domain allowlist for the project demo. A match is a helpful
+# signal, not a guarantee that every page or subdomain is safe.
+TRUSTED_DOMAINS = {
+    "microsoft.com", "microsoftonline.com", "office.com", "live.com",
+    "google.com", "apple.com", "wikipedia.org", "amazon.com",
+    "github.com", "streamlit.app"
+}
+
+
+def matches_trusted_domain(host):
+    host = (host or "").lower().rstrip(".")
+    return any(host == domain or host.endswith("." + domain)
+               for domain in TRUSTED_DOMAINS)
+
 # ---------------- URL FEATURE EXTRACTION ----------------
 
 def extract_features(raw_url):
@@ -292,20 +306,44 @@ if st.button("🔍 Check URL", use_container_width=True):
 
             probabilities = model.predict_proba(features)[0]
             classes = list(model.named_steps["classifier"].classes_)
-            phishing_score = float(probabilities[classes.index(1)])
+            model_phishing_score = float(probabilities[classes.index(1)])
+
+            parsed_for_domain = urlparse(
+                url if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", url.strip())
+                else "http://" + url.strip()
+            )
+            host_for_domain = (parsed_for_domain.hostname or "").lower()
+            trusted_domain_match = matches_trusted_domain(host_for_domain)
+
+            # Keep the model estimate separate from the trusted-domain signal.
+            # The domain rule is a small demo allowlist, not a guarantee of safety.
+            if trusted_domain_match:
+                phishing_score = 0.0
+                safety_score = 1.0
+                verdict_is_phishing = False
+            else:
+                phishing_score = model_phishing_score
+                safety_score = 1.0 - phishing_score
+                verdict_is_phishing = phishing_score >= 0.5
 
             st.divider()
 
-            # Safety score is the inverse of the model's phishing-risk score.
-            # A high safety score means the model predicts lower phishing risk.
-            safety_score = 1.0 - phishing_score
-
-            if phishing_score >= 0.5:
+            if trusted_domain_match:
+                st.markdown(
+                    f'''<div class="result-card result-safe">
+                    <div><span class="status-light light-green"></span><strong>🟢 RECOGNIZED OFFICIAL DOMAIN</strong></div>
+                    <div class="score-number">100%</div>
+                    <div class="score-label">Domain allowlist match — still verify the full address</div>
+                    </div>''',
+                    unsafe_allow_html=True
+                )
+                st.success("Result: Recognized domain — likely legitimate, not a guarantee of safety.")
+            elif verdict_is_phishing:
                 st.markdown(
                     f'''<div class="result-card result-risk">
                     <div><span class="status-light light-red"></span><strong>🔴 PHISHING RISK DETECTED</strong></div>
-                    <div class="score-number">{safety_score * 100:.1f}%</div>
-                    <div class="score-label">Safety score — low score means higher risk</div>
+                    <div class="score-number">{phishing_score * 100:.1f}%</div>
+                    <div class="score-label">Estimated phishing-risk score</div>
                     </div>''',
                     unsafe_allow_html=True
                 )
@@ -313,9 +351,9 @@ if st.button("🔍 Check URL", use_container_width=True):
             else:
                 st.markdown(
                     f'''<div class="result-card result-safe">
-                    <div><span class="status-light light-green"></span><strong>🟢 NON-PHISHING INDICATORS</strong></div>
+                    <div><span class="status-light light-green"></span><strong>🟢 LIKELY NON-PHISHING</strong></div>
                     <div class="score-number">{safety_score * 100:.1f}%</div>
-                    <div class="score-label">Safety score — high score means lower predicted risk</div>
+                    <div class="score-label">Model-based safety estimate — not a guarantee</div>
                     </div>''',
                     unsafe_allow_html=True
                 )
@@ -323,15 +361,20 @@ if st.button("🔍 Check URL", use_container_width=True):
 
             left, right = st.columns(2)
             with left:
-                st.metric("Safety Score", f"{safety_score * 100:.2f}%")
+                st.metric("Safety Indicator", f"{safety_score * 100:.2f}%")
                 st.progress(safety_score)
             with right:
-                st.metric("Phishing-Risk Score", f"{phishing_score * 100:.2f}%")
+                st.metric("Phishing-Risk Indicator", f"{phishing_score * 100:.2f}%")
                 st.progress(phishing_score)
 
-            st.caption(
-                "Scores are model estimates based on URL text, not proof that a website is safe or malicious."
-            )
+            if trusted_domain_match:
+                st.caption(
+                    "The domain matched this app's small trusted-domain list. These indicators are not verified live reputation scores; a trusted site can still have compromised pages."
+                )
+            else:
+                st.caption(
+                    f"Model phishing estimate: {model_phishing_score * 100:.2f}%. Scores are model estimates from URL text, not proof that a website is safe or malicious."
+                )
 
             st.subheader("URL Security Analysis")
 
@@ -364,10 +407,15 @@ if st.button("🔍 Check URL", use_container_width=True):
 
             st.subheader("Safety Advice")
 
-            if phishing_score >= 0.5:
+            if verdict_is_phishing:
                 st.warning(
                     "Avoid entering passwords, banking details, or OTPs. "
                     "Verify the website using its official address."
+                )
+            elif trusted_domain_match:
+                st.info(
+                    "This hostname matches the app's trusted-domain list. "
+                    "Check the exact spelling and avoid unexpected login links."
                 )
             else:
                 st.info(
