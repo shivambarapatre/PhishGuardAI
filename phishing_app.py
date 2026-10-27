@@ -315,16 +315,20 @@ if st.button("🔍 Check URL", use_container_width=True):
             host_for_domain = (parsed_for_domain.hostname or "").lower()
             trusted_domain_match = matches_trusted_domain(host_for_domain)
 
-            # Keep the model estimate separate from the trusted-domain signal.
-            # The domain rule is a small demo allowlist, not a guarantee of safety.
+            # One consistent pair of scores drives the verdict and every display:
+            # high phishing_score = RED/high risk; low phishing_score = GREEN/high safety.
+            # A trusted-domain match is only a demo allowlist signal, not a live safety check.
             if trusted_domain_match:
                 phishing_score = 0.0
-                safety_score = 1.0
-                verdict_is_phishing = False
             else:
                 phishing_score = model_phishing_score
-                safety_score = 1.0 - phishing_score
-                verdict_is_phishing = phishing_score >= 0.5
+
+            # Clamp to [0, 1] to keep Streamlit progress bars and labels consistent.
+            phishing_score = max(0.0, min(1.0, float(phishing_score)))
+            safety_score = 1.0 - phishing_score
+            risk_percent = phishing_score * 100
+            safety_percent = safety_score * 100
+            verdict_is_phishing = phishing_score >= 0.5
 
             st.divider()
 
@@ -342,8 +346,8 @@ if st.button("🔍 Check URL", use_container_width=True):
                 st.markdown(
                     f'''<div class="result-card result-risk">
                     <div><span class="status-light light-red"></span><strong>🔴 PHISHING RISK DETECTED</strong></div>
-                    <div class="score-number">{phishing_score * 100:.1f}%</div>
-                    <div class="score-label">Estimated phishing-risk score</div>
+                    <div class="score-number">{risk_percent:.1f}%</div>
+                    <div class="score-label">High score = higher phishing risk</div>
                     </div>''',
                     unsafe_allow_html=True
                 )
@@ -352,8 +356,8 @@ if st.button("🔍 Check URL", use_container_width=True):
                 st.markdown(
                     f'''<div class="result-card result-safe">
                     <div><span class="status-light light-green"></span><strong>🟢 LIKELY NON-PHISHING</strong></div>
-                    <div class="score-number">{safety_score * 100:.1f}%</div>
-                    <div class="score-label">Model-based safety estimate — not a guarantee</div>
+                    <div class="score-number">{safety_percent:.1f}%</div>
+                    <div class="score-label">High score = higher estimated safety</div>
                     </div>''',
                     unsafe_allow_html=True
                 )
@@ -361,10 +365,10 @@ if st.button("🔍 Check URL", use_container_width=True):
 
             left, right = st.columns(2)
             with left:
-                st.metric("Safety Indicator", f"{safety_score * 100:.2f}%")
+                st.metric("🟢 Safety Score", f"{safety_percent:.2f}%")
                 st.progress(safety_score)
             with right:
-                st.metric("Phishing-Risk Indicator", f"{phishing_score * 100:.2f}%")
+                st.metric("🔴 Phishing-Risk Score", f"{risk_percent:.2f}%")
                 st.progress(phishing_score)
 
             if trusted_domain_match:
